@@ -35,13 +35,11 @@ services:
       ACME_EMAIL: "${ACME_EMAIL:-ops@techoverfl.com}"
       INTERNAL_APP_HEALTH_PATH: "${INTERNAL_APP_HEALTH_PATH:-/health}"
       INTERNAL_APP_UPSTREAM: "${INTERNAL_APP_UPSTREAM:-http://dashboard:8080}"
-      SITE_ADDRESS: "${SITE_ADDRESS:-ai.techoverfl.com}"
+      SITE_ADDRESS: "${SITE_ADDRESS:-:8080}"
       UPSTREAM_HEALTH_INTERVAL: "${UPSTREAM_HEALTH_INTERVAL:-30s}"
       UPSTREAM_HEALTH_TIMEOUT: "${UPSTREAM_HEALTH_TIMEOUT:-5s}"
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "127.0.0.1:8088:8080"
     read_only: true
     security_opt:
       - no-new-privileges:true

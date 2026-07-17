@@ -4,9 +4,13 @@ Public VPS edge for `ai.techoverfl.com`. It currently serves the existing TOF
 AI dashboard and is ready to proxy application traffic to the private Rails
 service when the WireGuard connection is available.
 
-The edge owns TLS, public routing, local downloads, the gateway health endpoint,
-and the offline page. It does not own users, projects, conversations, HIL state,
-notification authorization, or application data.
+Nginx owns public TLS on this multi-site VPS. The edge Caddy container owns
+public routing, local downloads, the gateway health endpoint, and the offline
+page behind Nginx. It is published only on `127.0.0.1:8088`; it does not compete
+with the existing public web server for ports 80 or 443.
+
+The edge does not own users, projects, conversations, HIL state, notification
+authorization, or application data.
 
 ## Run Locally
 
@@ -29,9 +33,9 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-The safe default keeps all normal traffic on the local dashboard. Caddy obtains
-and renews TLS automatically when `SITE_ADDRESS` resolves to the VPS and ports
-80 and 443 are reachable.
+The safe default keeps all normal traffic on the local dashboard. Nginx sends
+requests to Caddy over loopback; Certbot obtains and renews the public Nginx
+certificate.
 
 Public routes:
 
@@ -99,3 +103,35 @@ After reviewing `.env` on the VPS:
 
 WireGuard remains host-managed and is not stored or configured by this public
 repository.
+
+## Enable Production TLS
+
+The authoritative DNS zone is hosted by Cloudflare. Set the DNS-only `A` record
+for `ai.techoverfl.com` to the VPS public address, `137.184.58.57`, before
+requesting a certificate. Confirm that public DNS and the VPS agree:
+
+    getent ahostsv4 ai.techoverfl.com
+    curl -4 https://api.ipify.org
+
+Bring up the edge stack, then install the bootstrap Nginx virtual host:
+
+    cp .env.example .env
+    ./deploy/deploy.sh
+
+    sudo install -m 0644 deploy/nginx/ai.techoverfl.com.conf /etc/nginx/sites-available/ai.techoverfl.com.conf
+    sudo ln -s /etc/nginx/sites-available/ai.techoverfl.com.conf /etc/nginx/sites-enabled/ai.techoverfl.com.conf
+    sudo nginx -t
+    sudo systemctl reload nginx
+
+Request and install the real certificate through the existing Certbot Nginx
+integration:
+
+    sudo certbot --nginx --redirect --domain ai.techoverfl.com --email ops@techoverfl.com --agree-tos --no-eff-email
+    sudo certbot renew --dry-run
+
+Certbot owns the installed copy under `/etc/nginx` after this step; do not copy
+the bootstrap file over it again. Verify both edge-controlled routes through the
+public TLS listener:
+
+    curl --fail --show-error --silent https://ai.techoverfl.com/edge/health
+    curl --fail --show-error --silent https://ai.techoverfl.com/status >/dev/null

@@ -1,9 +1,12 @@
 {
 	admin off
 	email {$ACME_EMAIL:ops@techoverfl.com}
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
-{$SITE_ADDRESS:ai.techoverfl.com} {
+{$SITE_ADDRESS::8080} {
 	encode zstd gzip
 
 	log {
