@@ -449,6 +449,72 @@ h1 {
   line-height: 1.55;
 }
 
+.status-page {
+  min-height: 100vh;
+}
+
+.status-card {
+  width: min(760px, 100%);
+  margin: clamp(48px, 10vh, 110px) auto;
+  padding: clamp(28px, 6vw, 64px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(25, 31, 36, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.status-card h1 {
+  max-width: 12ch;
+  font-size: clamp(2.65rem, 7vw, 5.3rem);
+}
+
+.status-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 206, 92, 0.55);
+  border-radius: 50%;
+  background: rgba(255, 206, 92, 0.12);
+  color: var(--accent-2);
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.status-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 36px 0 0;
+}
+
+.status-details div {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.status-details dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.status-details dd {
+  margin: 7px 0 0;
+  font-weight: 800;
+}
+
+.status-details div:first-child dd {
+  color: var(--accent);
+}
+
+.status-details div:last-child dd {
+  color: var(--accent-2);
+}
+
 @media (max-width: 860px) {
   .shell {
     width: min(100% - 24px, 720px);
@@ -514,6 +580,10 @@ h1 {
   }
 
   .quick-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .status-details {
     grid-template-columns: 1fr;
   }
 }

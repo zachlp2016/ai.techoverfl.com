@@ -1,0 +1,54 @@
+name: tof-ai-edge
+
+services:
+  dashboard:
+    build:
+      context: .
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=3).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    restart: unless-stopped
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    environment:
+      ACME_EMAIL: "${ACME_EMAIL:-ops@techoverfl.com}"
+      INTERNAL_APP_HEALTH_PATH: "${INTERNAL_APP_HEALTH_PATH:-/health}"
+      INTERNAL_APP_UPSTREAM: "${INTERNAL_APP_UPSTREAM:-http://dashboard:8080}"
+      SITE_ADDRESS: "${SITE_ADDRESS:-ai.techoverfl.com}"
+      UPSTREAM_HEALTH_INTERVAL: "${UPSTREAM_HEALTH_INTERVAL:-30s}"
+      UPSTREAM_HEALTH_TIMEOUT: "${UPSTREAM_HEALTH_TIMEOUT:-5s}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
