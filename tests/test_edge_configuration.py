@@ -45,6 +45,9 @@ class EdgeConfigurationTest(unittest.TestCase):
         public_site = (
             REPOSITORY_ROOT / "deploy/nginx/ops.ai.techoverfl.com.conf"
         ).read_text()
+        cloudflare_only = (
+            REPOSITORY_ROOT / "deploy/nginx/cloudflare-origin-only.conf"
+        ).read_text()
 
         self.assertIn("server_name ops.ai.techoverfl.com;", origin)
         self.assertIn("proxy_pass https://tof_portainer_workers;", origin)
@@ -58,6 +61,11 @@ class EdgeConfigurationTest(unittest.TestCase):
         self.assertIn("proxy_pass http://10.77.0.2:8443;", public_site)
         self.assertNotIn("192.168.15.", public_site)
         self.assertIn("proxy_set_header Host $host;", public_site)
+        self.assertIn("cloudflare-origin-only.conf", public_site)
+        self.assertIn("X-Real-IP $http_cf_connecting_ip", public_site)
+        self.assertIn("allow 173.245.48.0/20;", cloudflare_only)
+        self.assertIn("allow 2a06:98c0::/29;", cloudflare_only)
+        self.assertIn("deny all;", cloudflare_only)
 
     def test_kubeadm_renewal_is_thresholded_and_systemd_managed(self):
         renewal = (

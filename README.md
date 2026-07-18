@@ -137,9 +137,14 @@ sudo ./deploy/install-secure-origin.sh
 ```
 
 Configure Cloudflare Access for the entire operations hostname before enabling
-the nyc site. Then install the bootstrap site and let Certbot own its live copy:
+the nyc site. Add a narrowly scoped Access bypass for
+`/.well-known/acme-challenge/*` so Certbot HTTP validation and renewal can
+complete; every other path remains protected. Then install the Cloudflare
+origin allowlist and bootstrap site, and let Certbot own the site's live copy:
 
 ```bash
+sudo install -m 0644 deploy/nginx/cloudflare-origin-only.conf \
+  /etc/nginx/snippets/cloudflare-origin-only.conf
 sudo install -m 0644 deploy/nginx/ops.ai.techoverfl.com.conf \
   /etc/nginx/sites-available/ops.ai.techoverfl.com.conf
 sudo ln -s /etc/nginx/sites-available/ops.ai.techoverfl.com.conf \
@@ -149,6 +154,10 @@ sudo systemctl reload nginx
 sudo certbot --nginx --redirect --domain ops.ai.techoverfl.com \
   --email ops@techoverfl.com --agree-tos --no-eff-email
 ```
+
+The operations vhost accepts origin traffic only from Cloudflare's published
+IPv4 and IPv6 networks. It uses Cloudflare's trusted client-address header when
+forwarding the request, preventing direct-origin requests from bypassing Access.
 
 Portainer currently exposes HTTPS only and its generated certificate identifies
 only `localhost` and `0.0.0.0`. Secure Nginx therefore keeps the trusted LAN hop

@@ -31,6 +31,10 @@ NYC contains no Kubernetes worker addresses and Caddy is not part of this
 hostname's path. Its bootstrap virtual host preserves the public hostname and
 forwards the request directly to the secure WireGuard listener.
 
+The NYC operations vhost permits only Cloudflare's published IPv4 and IPv6
+source networks and forwards the trusted `CF-Connecting-IP` value. Direct
+origin requests therefore cannot bypass Cloudflare Access.
+
 Secure Nginx is the internal routing authority. The named server accepts only
 `ops.ai.techoverfl.com` and balances across:
 
@@ -99,11 +103,14 @@ until Cloudflare Access protects the entire hostname. Public activation is:
 
 1. Confirm Cloudflare Access redirects unauthenticated requests for the full
    `ops.ai.techoverfl.com` hostname.
-2. Install and enable `deploy/nginx/ops.ai.techoverfl.com.conf` on NYC.
-3. Validate and reload Nginx.
-4. Run Certbot for `ops.ai.techoverfl.com`.
-5. Test login, session persistence, logs, console attachment, and WebSockets.
-6. Confirm the worker NodePort has no public route.
+2. Add an Access bypass only for `/.well-known/acme-challenge/*` so Certbot can
+   issue and renew the origin certificate.
+3. Install the tracked Cloudflare allowlist and operations vhost on NYC.
+4. Validate and reload Nginx.
+5. Run Certbot for `ops.ai.techoverfl.com`.
+6. Test login, session persistence, logs, console attachment, and WebSockets.
+7. Confirm direct-origin requests are denied and the worker NodePort has no
+   public route.
 
 At this checkpoint, DNS resolves through Cloudflare but its public TLS handshake
 is not yet ready, and the NYC virtual host is intentionally not installed.
