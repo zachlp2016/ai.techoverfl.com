@@ -80,6 +80,25 @@ creates a new root-only backup, updates the administrator kubeconfig, and
 performs the required controlled static-pod restarts. Its initial installation
 run exited successfully without renewal because 364 days remained.
 
+## Stale worker registration cleanup
+
+Two unreachable Kubernetes node objects reused the addresses of the current
+`mananode-2` and `mananode-3` workers:
+
+```text
+tof-mananode-3.techoverfl.com
+tof-mananode-4.techoverfl.com
+```
+
+Their old Debian 11 and Kubernetes 1.25 identities did not match any running or
+stopped libvirt domain. Only those Kubernetes node objects were deleted; no VM
+definition or disk was changed. Kubernetes then garbage-collected their orphaned
+Calico and kube-proxy pods.
+
+The reconciled cluster contains four Ready nodes. Both `calico-node` and
+`kube-proxy` report `4/4` desired, current, ready, and available pods, and no
+non-running or unready pod remains in any namespace.
+
 ## Verified state
 
 ```text
