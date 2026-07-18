@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew kubeadm certificates inside the configured safety window
+Documentation=https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/
+After=network-online.target kubelet.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock --nonblock /run/kubeadm-certificate-renewal.lock /usr/local/sbin/renew-kubeadm-certificates
+TimeoutStartSec=15min
+Nice=10

@@ -111,6 +111,71 @@ the public edge.
 The complete restoration contract is recorded in
 `docs/checkpoints/2026-07-17-wireguard-model-proxy.md`.
 
+## Connect The Portainer Operations Host
+
+`ops.ai.techoverfl.com` belongs entirely to Portainer. The nyc Nginx virtual
+host is deliberately thin: it terminates public TLS and forwards the original
+host over WireGuard directly to `secure.techoverfl.com`. Caddy is not part of
+the operations path.
+
+Secure Nginx is the internal routing authority. It accepts the exact operations
+hostname and balances requests across the stable worker NodePort addresses:
+
+```text
+192.168.15.42:30779
+192.168.15.43:30779
+192.168.15.44:30779
+```
+
+The Portainer pod IP is intentionally absent because it is ephemeral. The
+default WireGuard origin server continues returning `404` for unrecognized
+hosts and paths. Install the updated secure route before enabling the public
+virtual host:
+
+```bash
+sudo ./deploy/install-secure-origin.sh
+```
+
+Configure Cloudflare Access for the entire operations hostname before enabling
+the nyc site. Then install the bootstrap site and let Certbot own its live copy:
+
+```bash
+sudo install -m 0644 deploy/nginx/ops.ai.techoverfl.com.conf \
+  /etc/nginx/sites-available/ops.ai.techoverfl.com.conf
+sudo ln -s /etc/nginx/sites-available/ops.ai.techoverfl.com.conf \
+  /etc/nginx/sites-enabled/ops.ai.techoverfl.com.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx --redirect --domain ops.ai.techoverfl.com \
+  --email ops@techoverfl.com --agree-tos --no-eff-email
+```
+
+Portainer currently exposes HTTPS only and its generated certificate identifies
+only `localhost` and `0.0.0.0`. Secure Nginx therefore keeps the trusted LAN hop
+encrypted with upstream verification explicitly disabled. A later internal CA
+certificate can enable authenticated TLS without changing the public route.
+
+## Maintain Manatree Certificates
+
+The Manatree kubeadm certificates are checked weekly by a systemd timer and are
+renewed only when the shortest-lived managed certificate has no more than 60
+days remaining. A renewal creates a root-only backup, renews all kubeadm
+certificates, updates the local administrator kubeconfig, and restarts each
+static control-plane pod so the certificates take effect.
+
+Install and immediately exercise the no-op expiration check on Manatree:
+
+```bash
+sudo ./deploy/install-kubeadm-certificate-renewal.sh
+```
+
+Inspect its schedule and logs with:
+
+```bash
+systemctl list-timers kubeadm-certificate-renewal.timer --no-pager
+journalctl -u kubeadm-certificate-renewal.service --no-pager
+```
+
 ## Connector File
 
 Place the iPhone connector at:

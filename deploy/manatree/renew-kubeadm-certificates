@@ -1,0 +1,118 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+threshold_seconds=${KUBEADM_RENEWAL_THRESHOLD_SECONDS:-5184000}
+manifest_directory=/etc/kubernetes/manifests
+staging_directory=/run/kubeadm-certificate-renewal
+backup_root=/var/backups/kubeadm-certificate-renewal
+admin_kubeconfig=/etc/kubernetes/admin.conf
+user_kubeconfig=/home/zachlp2016/.kube/config
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "renew-kubeadm-certificates must run as root" >&2
+    exit 1
+fi
+
+expiration_json=$(kubeadm certs check-expiration -o json)
+minimum_residual_seconds=$(
+    printf '%s\n' "$expiration_json" |
+        jq -er '[
+            .certificates[] |
+            select(.missing == false and .externallyManaged == false) |
+            .residualTime
+        ] | min'
+)
+
+if [ "$minimum_residual_seconds" -gt "$threshold_seconds" ]; then
+    echo "kubeadm certificates are outside the renewal window: minimum residual ${minimum_residual_seconds}s"
+    exit 0
+fi
+
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+backup_directory="$backup_root/$timestamp"
+node_name=$(hostname)
+
+umask 077
+install -d -o root -g root -m 0700 "$backup_directory"
+cp -a /etc/kubernetes "$backup_directory/"
+if [ -f "$user_kubeconfig" ]; then
+    install -o root -g root -m 0600 "$user_kubeconfig" "$backup_directory/user-kubeconfig"
+fi
+
+install -d -o root -g root -m 0700 "$staging_directory"
+
+restore_staged_manifests() {
+    for component in etcd kube-apiserver kube-controller-manager kube-scheduler; do
+        staged_manifest="$staging_directory/$component.yaml"
+        live_manifest="$manifest_directory/$component.yaml"
+        if [ -f "$staged_manifest" ] && [ ! -e "$live_manifest" ]; then
+            mv "$staged_manifest" "$live_manifest"
+        fi
+    done
+}
+
+trap restore_staged_manifests EXIT HUP INT TERM
+
+wait_for_api() {
+    attempt=1
+    while ! kubectl --kubeconfig="$admin_kubeconfig" get --raw=/readyz >/dev/null 2>&1; do
+        if [ "$attempt" -ge 36 ]; then
+            echo "Kubernetes API did not become ready after certificate renewal" >&2
+            return 1
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+}
+
+wait_for_component() {
+    component=$1
+    pod_name="$component-$node_name"
+    attempt=1
+    while [ "$(
+        kubectl --kubeconfig="$admin_kubeconfig" \
+            get pod -n kube-system "$pod_name" \
+            -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || true
+    )" != "true" ]; do
+        if [ "$attempt" -ge 36 ]; then
+            echo "$pod_name did not become ready after certificate renewal" >&2
+            return 1
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+}
+
+restart_component() {
+    component=$1
+    live_manifest="$manifest_directory/$component.yaml"
+    staged_manifest="$staging_directory/$component.yaml"
+
+    if [ ! -f "$live_manifest" ]; then
+        echo "Missing static pod manifest: $live_manifest" >&2
+        return 1
+    fi
+
+    mv "$live_manifest" "$staged_manifest"
+    sleep 25
+    mv "$staged_manifest" "$live_manifest"
+    sleep 25
+    wait_for_api
+    wait_for_component "$component"
+}
+
+echo "Renewing kubeadm certificates; minimum residual ${minimum_residual_seconds}s"
+kubeadm certs renew all
+install -o zachlp2016 -g zachlp2016 -m 0600 "$admin_kubeconfig" "$user_kubeconfig"
+
+restart_component etcd
+restart_component kube-apiserver
+restart_component kube-controller-manager
+restart_component kube-scheduler
+
+kubeadm certs check-expiration
+kubectl --kubeconfig="$admin_kubeconfig" get --raw=/readyz >/dev/null
+echo "Kubeadm certificate renewal and control-plane restart completed"

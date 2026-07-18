@@ -44,3 +44,7 @@ do
   attempt=$((attempt + 1))
   sleep 1
 done
+
+curl --fail --show-error --silent \
+  --header 'Host: ops.ai.techoverfl.com' \
+  http://10.77.0.2:8443/ >/dev/null
