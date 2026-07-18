@@ -44,6 +44,8 @@ Public routes:
 /status        served by the local dashboard container
 /downloads/*   served by the local dashboard container
 /.well-known/* served by the local dashboard container
+/utility-*     proxied to the path-restricted secure gateway through WireGuard
+/vision-genesis/* proxied to the Vision Genesis controller through WireGuard
 /*             sent to INTERNAL_APP_UPSTREAM
 ```
 
@@ -66,6 +68,48 @@ and supports WebSocket upgrades through its standard reverse proxy.
 
 Webhook routes are intentionally not special-cased yet. They should be added
 only after Rails has authenticated endpoints for the provider callbacks.
+
+## Connect The Model Gateway
+
+The four utility namespaces are independent of the future Rails upstream:
+
+```text
+/utility-tiny/*
+/utility-small/*
+/utility-medium/*
+/utility-medium-vision/*
+/vision-genesis/*
+```
+
+Caddy sends only those namespaces to `UTILITY_GATEWAY_UPSTREAM`. Vision Genesis
+uses a separate long response-header timeout for image-generation requests. The
+default is the dedicated Nginx listener on `secure.techoverfl.com` over
+WireGuard:
+
+```dotenv
+UTILITY_GATEWAY_UPSTREAM=http://10.77.0.2:8443
+```
+
+Install the repository-managed origin configuration on the secure host. The
+installer also preserves the firewall rule that permits only the nyc WireGuard
+peer:
+
+```bash
+sudo ./deploy/install-secure-origin.sh
+```
+
+The origin listener contains the existing utility and Vision Genesis routes and
+a private health check. It returns `404` for every other path. Provider
+credentials remain on the secure host and are never stored in this repository
+or on the VPS.
+
+Clients use the same public provider key for utility and Vision Genesis routes.
+The secure Nginx gateway translates it to the internal vision-lane key before
+contacting the controller; internal credentials never cross WireGuard back to
+the public edge.
+
+The complete restoration contract is recorded in
+`docs/checkpoints/2026-07-17-wireguard-model-proxy.md`.
 
 ## Connector File
 
@@ -90,6 +134,20 @@ docker compose config --quiet
 docker compose run --rm --no-deps edge \
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
+
+After both peers are deployed, verify the private origin from the VPS and the
+public routing layer separately:
+
+```bash
+curl --fail --show-error --silent http://10.77.0.2:8443/_edge/health
+curl --show-error --silent --output /dev/null --write-out '%{http_code}\n' \
+  http://127.0.0.1:8088/utility-tiny/v1/models
+curl --show-error --silent --output /dev/null --write-out '%{http_code}\n' \
+  http://127.0.0.1:8088/vision-genesis/v1/health
+```
+
+The model and Vision Genesis requests should return `401` without a provider
+key. Credentialed requests should return `200` when their backends are healthy.
 
 The final command may pull the Caddy image the first time.
 

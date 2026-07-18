@@ -27,6 +27,52 @@
 		respond "ok\n" 200
 	}
 
+	@utility_gateway path /utility-tiny /utility-tiny/* /utility-small /utility-small/* /utility-medium /utility-medium/* /utility-medium-vision /utility-medium-vision/*
+	handle @utility_gateway {
+		reverse_proxy {$UTILITY_GATEWAY_UPSTREAM:http://10.77.0.2:8443} {
+			health_uri /_edge/health
+			health_interval 30s
+			health_timeout 3s
+			health_fails 2
+			health_passes 2
+
+			fail_duration 30s
+			max_fails 2
+			lb_try_duration 2s
+			lb_try_interval 250ms
+			flush_interval -1
+
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 130s
+				keepalive 30s
+			}
+		}
+	}
+
+	@vision_genesis path /vision-genesis /vision-genesis/*
+	handle @vision_genesis {
+		reverse_proxy {$UTILITY_GATEWAY_UPSTREAM:http://10.77.0.2:8443} {
+			health_uri /_edge/health
+			health_interval 30s
+			health_timeout 3s
+			health_fails 2
+			health_passes 2
+
+			fail_duration 30s
+			max_fails 2
+			lb_try_duration 2s
+			lb_try_interval 250ms
+			flush_interval -1
+
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 3600s
+				keepalive 30s
+			}
+		}
+	}
+
 	@local_assets path /status /status.html /styles.css /downloads/* /.well-known/*
 	handle @local_assets {
 		@status path /status
