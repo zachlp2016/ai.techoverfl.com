@@ -44,6 +44,8 @@ Public routes:
 /status        served by the local dashboard container
 /downloads/*   served by the local dashboard container
 /.well-known/* served by the local dashboard container
+/utility-*     proxied to the path-restricted secure gateway through WireGuard
+/vision-genesis/* proxied to the Vision Genesis controller through WireGuard
 /*             sent to INTERNAL_APP_UPSTREAM
 ```
 
@@ -66,6 +68,122 @@ and supports WebSocket upgrades through its standard reverse proxy.
 
 Webhook routes are intentionally not special-cased yet. They should be added
 only after Rails has authenticated endpoints for the provider callbacks.
+
+## Connect The Model Gateway
+
+The four utility namespaces are independent of the future Rails upstream:
+
+```text
+/utility-tiny/*
+/utility-small/*
+/utility-medium/*
+/utility-medium-vision/*
+/vision-genesis/*
+```
+
+Caddy sends only those namespaces to `UTILITY_GATEWAY_UPSTREAM`. Vision Genesis
+uses a separate long response-header timeout for image-generation requests. The
+default is the dedicated Nginx listener on `secure.techoverfl.com` over
+WireGuard:
+
+```dotenv
+UTILITY_GATEWAY_UPSTREAM=http://10.77.0.2:8443
+```
+
+Install the repository-managed origin configuration on the secure host. The
+installer also preserves the firewall rule that permits only the nyc WireGuard
+peer:
+
+```bash
+sudo ./deploy/install-secure-origin.sh
+```
+
+The origin listener contains the existing utility and Vision Genesis routes and
+a private health check. It returns `404` for every other path. Provider
+credentials remain on the secure host and are never stored in this repository
+or on the VPS.
+
+Clients use the same public provider key for utility and Vision Genesis routes.
+The secure Nginx gateway translates it to the internal vision-lane key before
+contacting the controller; internal credentials never cross WireGuard back to
+the public edge.
+
+The complete restoration contract is recorded in
+`docs/checkpoints/2026-07-17-wireguard-model-proxy.md`.
+
+## Connect The Portainer Operations Host
+
+`ops.ai.techoverfl.com` belongs entirely to Portainer. The nyc Nginx virtual
+host is deliberately thin: it terminates public TLS and forwards the original
+host over WireGuard directly to `secure.techoverfl.com`. Caddy is not part of
+the operations path.
+
+Secure Nginx is the internal routing authority. It accepts the exact operations
+hostname and balances requests across the stable worker NodePort addresses:
+
+```text
+192.168.15.42:30779
+192.168.15.43:30779
+192.168.15.44:30779
+```
+
+The Portainer pod IP is intentionally absent because it is ephemeral. The
+default WireGuard origin server continues returning `404` for unrecognized
+hosts and paths. Install the updated secure route before enabling the public
+virtual host:
+
+```bash
+sudo ./deploy/install-secure-origin.sh
+```
+
+Configure Cloudflare Access for the entire operations hostname before enabling
+the nyc site. Add a narrowly scoped Access bypass for
+`/.well-known/acme-challenge/*` so Certbot HTTP validation and renewal can
+complete; every other path remains protected. Then install the Cloudflare
+origin allowlist and bootstrap site, and let Certbot own the site's live copy:
+
+```bash
+sudo install -m 0644 deploy/nginx/cloudflare-origin-only.conf \
+  /etc/nginx/snippets/cloudflare-origin-only.conf
+sudo install -m 0644 deploy/nginx/ops.ai.techoverfl.com.conf \
+  /etc/nginx/sites-available/ops.ai.techoverfl.com.conf
+sudo ln -s /etc/nginx/sites-available/ops.ai.techoverfl.com.conf \
+  /etc/nginx/sites-enabled/ops.ai.techoverfl.com.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx --redirect --domain ops.ai.techoverfl.com \
+  --email ops@techoverfl.com --agree-tos --no-eff-email
+```
+
+The operations vhost accepts origin traffic only from Cloudflare's published
+IPv4 and IPv6 networks. It uses Cloudflare's trusted client-address header when
+forwarding the request, preventing direct-origin requests from bypassing Access.
+
+Portainer currently exposes HTTPS only and its generated certificate identifies
+only `localhost` and `0.0.0.0`. Secure Nginx therefore keeps the trusted LAN hop
+encrypted with upstream verification explicitly disabled. A later internal CA
+certificate can enable authenticated TLS without changing the public route.
+
+## Maintain Manatree Certificates
+
+The Manatree kubeadm certificates are checked weekly by a systemd timer and are
+renewed only when the shortest-lived managed certificate has no more than 60
+days remaining. A renewal creates a root-only backup, renews all kubeadm
+certificates, updates the local administrator kubeconfig, and restarts each
+static control-plane pod so the certificates take effect.
+
+Install and immediately exercise the no-op expiration check on Manatree:
+
+```bash
+sudo ./deploy/install-kubeadm-certificate-renewal.sh
+```
+
+Inspect its schedule and logs with:
+
+```bash
+systemctl list-timers kubeadm-certificate-renewal.timer --no-pager
+journalctl -u kubeadm-certificate-renewal.service --no-pager
+```
 
 ## Connector File
 
@@ -90,6 +208,20 @@ docker compose config --quiet
 docker compose run --rm --no-deps edge \
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
+
+After both peers are deployed, verify the private origin from the VPS and the
+public routing layer separately:
+
+```bash
+curl --fail --show-error --silent http://10.77.0.2:8443/_edge/health
+curl --show-error --silent --output /dev/null --write-out '%{http_code}\n' \
+  http://127.0.0.1:8088/utility-tiny/v1/models
+curl --show-error --silent --output /dev/null --write-out '%{http_code}\n' \
+  http://127.0.0.1:8088/vision-genesis/v1/health
+```
+
+The model and Vision Genesis requests should return `401` without a provider
+key. Credentialed requests should return `200` when their backends are healthy.
 
 The final command may pull the Caddy image the first time.
 

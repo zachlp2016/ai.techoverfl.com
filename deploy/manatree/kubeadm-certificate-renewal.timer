@@ -1,0 +1,11 @@
+[Unit]
+Description=Check kubeadm certificate lifetime weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 03:15:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=kubeadm-certificate-renewal.service
+
+[Install]
+WantedBy=timers.target
